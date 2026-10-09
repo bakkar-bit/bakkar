@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A simple handheld: body, d-pad and two buttons, centered in the 108dp adaptive canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#E8EEF6"
+        android:pathData="M30,40 L78,40 A10,10 0 0 1 88,50 L88,58 A10,10 0 0 1 78,68 L30,68 A10,10 0 0 1 20,58 L20,50 A10,10 0 0 1 30,40 Z" />
+    <path
+        android:fillColor="#1A2433"
+        android:pathData="M40,44 L68,44 L68,64 L40,64 Z" />
+    <path
+        android:fillColor="#4FA3FF"
+        android:pathData="M28,52 L36,52 L36,56 L28,56 Z M30,50 L34,50 L34,58 L30,58 Z" />
+    <path
+        android:fillColor="#4FA3FF"
+        android:pathData="M76,51 m-2,0 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 M80,56 m-2,0 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0" />
+</vector>

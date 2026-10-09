@@ -1,0 +1,60 @@
+name: Build APK
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.DECKSTARTER_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::No signing key configured; the APK is signed with a throwaway debug key."
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "DECKSTARTER_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build release APK
+        env:
+          DECKSTARTER_KEYSTORE_PASSWORD: ${{ secrets.DECKSTARTER_KEYSTORE_PASSWORD }}
+          DECKSTARTER_KEY_ALIAS: ${{ secrets.DECKSTARTER_KEY_ALIAS }}
+          DECKSTARTER_KEY_PASSWORD: ${{ secrets.DECKSTARTER_KEY_PASSWORD }}
+          DROIDDECK_REPO: ${{ vars.DROIDDECK_REPO }}
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease ${DROIDDECK_REPO:+-PdroiddeckRepo=$DROIDDECK_REPO}
+          cp app/build/outputs/apk/release/app-release.apk DeckStarter.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DeckStarter-apk
+          path: DeckStarter.apk
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: DeckStarter.apk
+          generate_release_notes: true

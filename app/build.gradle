@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+def droiddeckRepo = (project.findProperty('droiddeckRepo') ?: '').toString().trim()
+def keystorePath = System.getenv('DECKSTARTER_KEYSTORE')
+
+android {
+    namespace 'com.bakkar.deckstarter'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.bakkar.deckstarter'
+        minSdk 28
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+        buildConfigField 'String', 'DEFAULT_DROIDDECK_REPO', "\"${droiddeckRepo}\""
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePath) {
+                storeFile file(keystorePath)
+                storePassword System.getenv('DECKSTARTER_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('DECKSTARTER_KEY_ALIAS')
+                keyPassword System.getenv('DECKSTARTER_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // Without a configured keystore, fall back to the debug key so the APK still installs.
+            signingConfig keystorePath ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
