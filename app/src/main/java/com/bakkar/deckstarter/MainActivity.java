@@ -26,6 +26,8 @@ import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -50,6 +52,7 @@ public final class MainActivity extends Activity implements InstallResultReceive
     private static final String PREF_REPO = "repo";
     private static final String PREF_PRERELEASES = "prereleases";
     private static final String PREF_PACKAGE = "droiddeck_package";
+    private static final String PREF_VARIANT = "variant";
     private static final int MAX_NOTES_CHARS = 4000;
 
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -72,6 +75,7 @@ public final class MainActivity extends Activity implements InstallResultReceive
     private LinearLayout setupSection;
     private EditText repoInput;
     private CheckBox prereleaseBox;
+    private RadioGroup variantGroup;
 
     private GitHubReleases.Release release;
     private boolean busy;
@@ -163,8 +167,14 @@ public final class MainActivity extends Activity implements InstallResultReceive
 
         // 3. Finish setup
         setupSection = card(column, "3. Finish setup");
-        setupSection.addView(text("DroidDeck downloads Steam, Proton and GPU drivers itself on first "
-                + "launch. Keep the screen on and stay on Wi-Fi until it finishes.", 13, MUTED));
+        setupSection.addView(text("Before Steam can launch, turn off \"Restrict child processes\" in "
+                + "Developer options. If you don't see Developer options, open About phone and tap "
+                + "Build number seven times. On Android 12 and 13 the option may be missing; DroidDeck "
+                + "then offers a \"Fix it for me\" button on Steam's first launch.", 13, MUTED));
+        setupSection.addView(button("Open Developer options", v -> openDeveloperOptions()));
+        setupSection.addView(text("In DroidDeck: install the Linux runtime, then press Play and sign in "
+                + "to Steam. Steam downloads on first launch, so stay on Wi-Fi. Install \"Desktop & "
+                + "apps\" too if you want the desktop and emulators.", 13, MUTED));
         setupSection.addView(button("Open DroidDeck", v -> launchDroidDeck()));
         setupSection.addView(button("Use DroidDeck as home screen (optional)",
                 v -> openSettings(new Intent(Settings.ACTION_HOME_SETTINGS))));
@@ -172,6 +182,8 @@ public final class MainActivity extends Activity implements InstallResultReceive
                 v -> openSettings(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))));
         setupSection.addView(button("DroidDeck permissions & storage", v -> openDroidDeckAppInfo()));
         setupSection.addView(button("Official DroidDeck project page", v -> openRepoPage()));
+        setupSection.addView(button("Get help: DroidDeck Discord",
+                v -> openSettings(new Intent(Intent.ACTION_VIEW, Uri.parse(DroidDeckSource.DISCORD_URL)))));
 
         // Settings
         LinearLayout settings = card(column, "Settings");
@@ -190,6 +202,21 @@ public final class MainActivity extends Activity implements InstallResultReceive
         prereleaseBox.setTextColor(TEXT);
         prereleaseBox.setChecked(prefs.getBoolean(PREF_PRERELEASES, false));
         settings.addView(prereleaseBox);
+        settings.addView(text("DroidDeck build. The performance-mode builds are the same app under a "
+                + "game or benchmark's package name, because some phones only give their performance "
+                + "modes to those names. Each installs as a separate app.", 13, MUTED));
+        variantGroup = new RadioGroup(this);
+        DroidDeckSource.Variant current = variant();
+        for (DroidDeckSource.Variant v : DroidDeckSource.Variant.values()) {
+            RadioButton rb = new RadioButton(this);
+            rb.setId(View.generateViewId());
+            rb.setTag(v);
+            rb.setText(v.label);
+            rb.setTextColor(TEXT);
+            variantGroup.addView(rb);
+            if (v == current) rb.setChecked(true);
+        }
+        settings.addView(variantGroup);
         settings.addView(button("Save", v -> saveSettings()));
         settings.addView(text("DeckStarter " + BuildConfig.VERSION_NAME, 12, MUTED));
 
@@ -293,6 +320,19 @@ public final class MainActivity extends Activity implements InstallResultReceive
         return prefs.getString(PREF_REPO, "").trim();
     }
 
+    private DroidDeckSource.Variant variant() {
+        return DroidDeckSource.Variant.fromName(prefs.getString(PREF_VARIANT, null));
+    }
+
+    private boolean official() {
+        return DroidDeckSource.isOfficial(repo());
+    }
+
+    /** The APK from the latest release to install, or null. */
+    private GitHubReleases.Asset selectedAsset() {
+        return release == null ? null : release.pick(variant(), official());
+    }
+
     private void refreshRelease() {
         String repo = repo();
         boolean pre = prefs.getBoolean(PREF_PRERELEASES, false);
@@ -303,7 +343,8 @@ public final class MainActivity extends Activity implements InstallResultReceive
             updateInstalledState();
             return;
         }
-        sourceText.setText("Source: github.com/" + repo);
+        sourceText.setText("Source: github.com/" + repo + (DroidDeckSource.isOfficial(repo)
+                ? " (official)" : " (not the official DroidDeck repository; signature not checked)"));
         releaseText.setText("Looking for the latest release…");
         updateInstalledState();
         worker.execute(() -> {
@@ -325,11 +366,12 @@ public final class MainActivity extends Activity implements InstallResultReceive
         StringBuilder sb = new StringBuilder("Latest: ").append(r.tag);
         if (r.prerelease) sb.append(" (pre-release)");
         if (!date.isEmpty()) sb.append(" · ").append(date);
-        if (r.apk != null) {
-            sb.append("\n").append(r.apk.name).append(" · ").append(DeviceCheck.formatBytes(r.apk.size));
-            if (r.apk.sha256 == null) sb.append("\n(GitHub gave no checksum for this file; it will not be verified)");
+        GitHubReleases.Asset apk = selectedAsset();
+        if (apk != null) {
+            sb.append("\n").append(apk.name).append(" · ").append(DeviceCheck.formatBytes(apk.size));
+            if (apk.sha256 == null) sb.append("\n(GitHub gave no checksum for this file)");
         } else {
-            sb.append("\nThis release has no Android APK attached.");
+            sb.append("\nThis release has no matching Android APK.");
         }
         releaseText.setText(sb);
         String notes = r.notes == null ? "" : r.notes.trim();
@@ -344,10 +386,12 @@ public final class MainActivity extends Activity implements InstallResultReceive
         notesButton.setText(show ? "Hide release notes" : "Show release notes");
     }
 
-    /** Finds DroidDeck: the package we installed, else a launcher app labelled "DroidDeck". */
+    /** Finds DroidDeck: the package we installed, the chosen official build, else a launcher app labelled "DroidDeck". */
     private PackageInfo findDroidDeck() {
         PackageInfo info = ApkInstaller.installedInfo(this, prefs.getString(PREF_PACKAGE, null));
         if (info != null) return info;
+        // The official builds share one label, so the chosen build's package is the only reliable key.
+        if (official()) return ApkInstaller.installedInfo(this, variant().packageName);
         PackageManager pm = getPackageManager();
         Intent launcher = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         for (ResolveInfo ri : pm.queryIntentActivities(launcher, 0)) {
@@ -370,7 +414,7 @@ public final class MainActivity extends Activity implements InstallResultReceive
             primaryButton.setText("Download & install DroidDeck");
         } else {
             installedText.setText("Installed: " + installed.versionName);
-            boolean newer = release != null && release.apk != null
+            boolean newer = selectedAsset() != null
                     && GitHubReleases.compareVersions(release.tag, installed.versionName) > 0;
             primaryButton.setText(newer ? "Update DroidDeck to " + release.tag : "Open DroidDeck");
         }
@@ -379,7 +423,8 @@ public final class MainActivity extends Activity implements InstallResultReceive
 
     private void onPrimary() {
         PackageInfo installed = findDroidDeck();
-        boolean newer = installed != null && release != null && release.apk != null
+        GitHubReleases.Asset apk = selectedAsset();
+        boolean newer = installed != null && apk != null
                 && GitHubReleases.compareVersions(release.tag, installed.versionName) > 0;
         if (installed != null && !newer) {
             launchDroidDeck();
@@ -390,8 +435,8 @@ public final class MainActivity extends Activity implements InstallResultReceive
                     ? "Still checking GitHub; try again in a moment" : "Set the DroidDeck repository in Settings first");
             return;
         }
-        if (release.apk == null) {
-            toast("The latest release has no APK to install");
+        if (apk == null) {
+            toast("The latest release has no APK for the chosen build");
             return;
         }
         if (!getPackageManager().canRequestPackageInstalls()) {
@@ -410,12 +455,12 @@ public final class MainActivity extends Activity implements InstallResultReceive
                     .setTitle("Device not supported")
                     .setMessage("This device fails DroidDeck's requirements (see step 1). It will "
                             + "probably not work. Install anyway?")
-                    .setPositiveButton("Install anyway", (d, w) -> downloadAndInstall(release.apk))
+                    .setPositiveButton("Install anyway", (d, w) -> downloadAndInstall(apk))
                     .setNegativeButton("Cancel", null)
                     .show();
             return;
         }
-        downloadAndInstall(release.apk);
+        downloadAndInstall(apk);
     }
 
     private void downloadAndInstall(GitHubReleases.Asset asset) {
@@ -425,7 +470,8 @@ public final class MainActivity extends Activity implements InstallResultReceive
         progress.setMax(1000);
         progress.setProgress(0);
         statusText.setText("Downloading…");
-        String expectedPackage = prefs.getString(PREF_PACKAGE, null);
+        boolean official = official();
+        String expectedPackage = official ? variant().packageName : prefs.getString(PREF_PACKAGE, null);
         worker.execute(() -> {
             try {
                 File apk = ApkInstaller.download(getApplicationContext(), asset, (done, total) -> main.post(() -> {
@@ -437,11 +483,26 @@ public final class MainActivity extends Activity implements InstallResultReceive
                 if (info == null) throw new java.io.IOException("The downloaded file is not a valid APK");
                 if (expectedPackage != null && !expectedPackage.equals(info.packageName)) {
                     throw new java.io.IOException("The download is " + info.packageName
-                            + ", but the installed DroidDeck is " + expectedPackage + ". Check the repository in Settings.");
+                            + ", but " + expectedPackage + " was expected. Check Settings.");
+                }
+                String signer = "";
+                if (official) {
+                    ApkInstaller.SignerResult result =
+                            ApkInstaller.checkSigner(info, DroidDeckSource.RELEASE_SIGNER_SHA256);
+                    if (result == ApkInstaller.SignerResult.MISMATCH) {
+                        throw new java.io.IOException("This APK is not signed with DroidDeck's release key. "
+                                + "Not installing it.");
+                    }
+                    if (result == ApkInstaller.SignerResult.UNKNOWN && asset.sha256 == null) {
+                        throw new java.io.IOException("Could not verify this APK (no signature info and no "
+                                + "checksum from GitHub). Not installing it.");
+                    }
+                    signer = result == ApkInstaller.SignerResult.MATCH
+                            ? "Signed by DroidDeck. " : "Could not read the signature on this Android version. ";
                 }
                 prefs.edit().putString(PREF_PACKAGE, info.packageName).apply();
-                main.post(() -> statusText.setText(asset.sha256 != null
-                        ? "Checksum verified. Installing…" : "Installing…"));
+                String verified = signer + (asset.sha256 != null ? "Checksum verified. " : "");
+                main.post(() -> statusText.setText(verified + "Installing…"));
                 ApkInstaller.install(getApplicationContext(), apk);
             } catch (Exception e) {
                 main.post(() -> {
@@ -501,6 +562,17 @@ public final class MainActivity extends Activity implements InstallResultReceive
         openSettings(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/" + repo())));
     }
 
+    private void openDeveloperOptions() {
+        boolean enabled = Settings.Global.getInt(getContentResolver(),
+                Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) != 0;
+        if (enabled) {
+            openSettings(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
+        } else {
+            toast("Developer options are off. Tap \"Build number\" seven times here, then come back.");
+            openSettings(new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS));
+        }
+    }
+
     private void openSettings(Intent intent) {
         try {
             startActivity(intent);
@@ -519,12 +591,16 @@ public final class MainActivity extends Activity implements InstallResultReceive
             toast("Use the form owner/name, e.g. someone/DroidDeck");
             return;
         }
-        boolean repoChanged = !value.equals(repo());
+        View checked = variantGroup.findViewById(variantGroup.getCheckedRadioButtonId());
+        DroidDeckSource.Variant chosen = checked != null
+                ? (DroidDeckSource.Variant) checked.getTag() : DroidDeckSource.Variant.STANDARD;
+        boolean sourceChanged = !value.equals(repo()) || chosen != variant();
         SharedPreferences.Editor edit = prefs.edit()
                 .putString(PREF_REPO, value)
+                .putString(PREF_VARIANT, chosen.name())
                 .putBoolean(PREF_PRERELEASES, prereleaseBox.isChecked());
-        // A different source may ship a different package; forget the remembered one.
-        if (repoChanged) edit.remove(PREF_PACKAGE);
+        // A different source or build is a different package; forget the remembered one.
+        if (sourceChanged) edit.remove(PREF_PACKAGE);
         edit.apply();
         repoInput.setText(value);
         toast("Saved");

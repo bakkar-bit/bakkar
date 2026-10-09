@@ -1,6 +1,6 @@
 # DeckStarter
 
-A one-stop Android app for getting [DroidDeck](#droiddeck-source) running on a handheld or phone.
+A one-stop Android app for getting [DroidDeck](https://github.com/Droid-Deck/DroidDeck) running on a handheld or phone.
 
 DeckStarter is an **unofficial** helper. It isn't affiliated with the DroidDeck project or Valve, and it
 doesn't contain DroidDeck, Steam or Proton. It always installs DroidDeck from the official project's
@@ -8,15 +8,31 @@ GitHub releases, so you get the genuine build.
 
 ## What it does
 
-1. **Checks your device** against DroidDeck's requirements: Android 9+, a 64-bit ARM CPU, a Qualcomm
-   Adreno 730 or newer GPU (read live from the GPU driver), Vulkan 1.1, RAM and free storage.
-2. **Installs DroidDeck and keeps it updated.** It finds the newest release on GitHub, picks the right
-   APK, downloads it, verifies its SHA-256 checksum against the one GitHub publishes, and hands it to
-   the Android installer. When a newer release comes out, the same button updates it.
-3. **Finishes setup.** Shortcuts to open DroidDeck, make it the home screen, exempt it from battery
-   saving, manage its permissions and storage, and visit the official project page.
+1. **Checks your device** against DroidDeck's README requirements: Android 9+, a 64-bit ARM CPU, an
+   Adreno 730+ or 8xx GPU (read live from the GPU driver; 6xx is flagged as experimental; 710, Mali,
+   Xclipse and PowerVR as unsupported), and about 4.1 GB free for the runtime plus room for games.
+2. **Installs DroidDeck and keeps it updated.** It finds the newest release of
+   `Droid-Deck/DroidDeck`, picks the build you chose, downloads it and verifies it twice before
+   handing it to the Android installer:
+   - the SHA-256 checksum GitHub publishes for the file, and
+   - that the APK is signed with DroidDeck's release key (`keystore/release-signer.sha256` in their
+     repo). An APK signed with any other key is refused.
 
-DroidDeck itself downloads Steam, Proton and GPU drivers on its first launch.
+   When a newer release comes out, the same button updates it.
+3. **Finishes setup.** Walks through turning off **Restrict child processes** in Developer options
+   (required before Steam launches), then shortcuts to open DroidDeck, make it the home screen,
+   exempt it from battery saving, manage its permissions and storage, the project page, and the
+   official DroidDeck Discord for help.
+
+DroidDeck itself installs its Linux runtime and downloads Steam on first launch.
+
+### DroidDeck builds
+
+Each DroidDeck release ships the same app under four package names, because some phones only give
+their performance modes to apps with certain names. DeckStarter installs the **Standard** build
+(`com.droiddeck.launcher`) unless you pick another in Settings: PUBG (`com.tencent.ig`), AnTuTu
+(`com.antutu.benchmark.full`) or Ludashi (`com.ludashi.benchmark`). Each installs as a separate app
+with its own data.
 
 ## Getting the APK
 
@@ -28,8 +44,9 @@ permission to let DeckStarter install apps.
 
 ## DroidDeck source
 
-DeckStarter needs the official DroidDeck repository name (`owner/name`). You can set it in any of these
-places, listed from highest priority:
+DeckStarter is built with `Droid-Deck/DroidDeck` as its source. The signature check only applies to
+that repository. If the project ever moves, you can change the source in any of these places, listed
+from highest priority:
 
 - in the app: **Settings → Official DroidDeck GitHub repository**
 - at build time: repository variable `DROIDDECK_REPO` (**Settings → Secrets and variables → Actions →

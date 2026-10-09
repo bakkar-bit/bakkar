@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -91,9 +93,44 @@ final class ApkInstaller {
         return target;
     }
 
-    /** Reads the package name and version out of an APK file, or null if it is not a valid APK. */
+    /**
+     * Reads the package name, version and signers out of an APK file, or null if it is not a
+     * valid APK.
+     */
     static PackageInfo inspect(Context context, File apk) {
-        return context.getPackageManager().getPackageArchiveInfo(apk.getPath(), 0);
+        return context.getPackageManager()
+                .getPackageArchiveInfo(apk.getPath(), PackageManager.GET_SIGNING_CERTIFICATES);
+    }
+
+    enum SignerResult { MATCH, MISMATCH, UNKNOWN }
+
+    /**
+     * Checks that the APK is signed by the certificate with the given SHA-256, either directly or
+     * through a signed key-rotation lineage (which only the holder of that key can produce).
+     */
+    static SignerResult checkSigner(PackageInfo info, String expectedSha256) {
+        SigningInfo signing = info.signingInfo;
+        if (signing == null) return SignerResult.UNKNOWN;
+        Signature[] current = signing.getApkContentsSigners();
+        Signature[] history = signing.hasMultipleSigners() ? null : signing.getSigningCertificateHistory();
+        if ((current == null || current.length == 0) && (history == null || history.length == 0)) {
+            return SignerResult.UNKNOWN;
+        }
+        if (contains(current, expectedSha256) || contains(history, expectedSha256)) return SignerResult.MATCH;
+        return SignerResult.MISMATCH;
+    }
+
+    private static boolean contains(Signature[] signatures, String sha256) {
+        if (signatures == null) return false;
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            for (Signature s : signatures) {
+                if (toHex(md.digest(s.toByteArray())).equals(sha256)) return true;
+            }
+        } catch (NoSuchAlgorithmException e) {
+            return false;
+        }
+        return false;
     }
 
     /**

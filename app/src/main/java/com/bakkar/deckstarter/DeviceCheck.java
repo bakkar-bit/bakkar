@@ -36,12 +36,13 @@ final class DeviceCheck {
         }
     }
 
-    /** Lowest Adreno GPU that DroidDeck's requirements list. */
+    /** Lowest fully supported Adreno GPU in DroidDeck's README (6xx is experimental). */
     static final int MIN_ADRENO = 730;
     static final int MIN_SDK = Build.VERSION_CODES.P;
-    /** Rule of thumb for Steam, Proton and a few games; not an official figure. */
+    /** DroidDeck's README: about 3 GB for the runtime plus 1.1 GB for the desktop and emulators. */
+    static final long RUNTIME_BYTES = 4100L * 1024 * 1024;
+    /** Room for Steam itself and a game or two on top of the runtime; our own rule of thumb. */
     static final long RECOMMENDED_FREE_BYTES = 16L * 1024 * 1024 * 1024;
-    static final long RECOMMENDED_RAM_BYTES = 8L * 1024 * 1024 * 1024;
 
     private static final Pattern ADRENO = Pattern.compile("Adreno\\D*(\\d{3,4})", Pattern.CASE_INSENSITIVE);
     /** Vulkan 1.1, the floor for DXVK/VKD3D under Proton. */
@@ -85,20 +86,21 @@ final class DeviceCheck {
         String soc = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                 ? Build.SOC_MANUFACTURER + " " + Build.SOC_MODEL : Build.HARDWARE;
         if (renderer == null) {
-            return new Item(Level.WARN, "Qualcomm Adreno " + MIN_ADRENO + "+ GPU",
+            return new Item(Level.WARN, "Qualcomm Adreno " + MIN_ADRENO + "+ or 8xx GPU",
                     "Could not read the GPU name (chip: " + soc + ")");
         }
         String detail = renderer + " (chip: " + soc + ")";
         int model = adrenoModel(renderer);
+        String label = "Qualcomm Adreno " + MIN_ADRENO + "+ or 8xx GPU";
         if (model < 0) {
-            return new Item(Level.FAIL, "Qualcomm Adreno " + MIN_ADRENO + "+ GPU",
-                    detail + ". DroidDeck only supports Adreno GPUs.");
+            return new Item(Level.FAIL, label, detail + ". Mali, Xclipse and PowerVR GPUs are unsupported.");
         }
-        if (model < MIN_ADRENO) {
-            return new Item(Level.WARN, "Qualcomm Adreno " + MIN_ADRENO + "+ GPU",
-                    detail + ". Below the reported minimum; DroidDeck may not run.");
+        if (model >= MIN_ADRENO) return new Item(Level.OK, label, detail);
+        if (model >= 600 && model < 700) {
+            return new Item(Level.WARN, label, detail + ". Adreno 6xx is experimental: DirectX 11 games "
+                    + "may run, DirectX 12 games can crash.");
         }
-        return new Item(Level.OK, "Qualcomm Adreno " + MIN_ADRENO + "+ GPU", detail);
+        return new Item(Level.FAIL, label, detail + ". This GPU is unsupported.");
     }
 
     /** Returns the Adreno model number, or -1 if the renderer is not an Adreno GPU. */
@@ -110,24 +112,24 @@ final class DeviceCheck {
     private static Item checkVulkan(Context context) {
         boolean vk11 = context.getPackageManager()
                 .hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION, VULKAN_1_1);
-        return new Item(vk11 ? Level.OK : Level.FAIL, "Vulkan 1.1 or newer",
+        return new Item(vk11 ? Level.OK : Level.WARN, "Vulkan 1.1 or newer",
                 vk11 ? "Supported" : "Not reported by the system");
     }
 
+    /** DroidDeck states no RAM minimum, so this is shown for information only. */
     private static Item checkRam(Context context) {
         ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
         ActivityManager.MemoryInfo info = new ActivityManager.MemoryInfo();
         am.getMemoryInfo(info);
-        // totalMem excludes memory reserved by the kernel, so allow some slack below 8 GB.
-        boolean enough = info.totalMem >= RECOMMENDED_RAM_BYTES * 85 / 100;
-        return new Item(enough ? Level.OK : Level.WARN, "8 GB RAM recommended", formatBytes(info.totalMem));
+        return new Item(Level.OK, "Memory", formatBytes(info.totalMem) + " RAM");
     }
 
     private static Item checkStorage() {
         StatFs stat = new StatFs(Environment.getDataDirectory().getPath());
         long free = stat.getAvailableBytes();
-        return new Item(free >= RECOMMENDED_FREE_BYTES ? Level.OK : Level.WARN,
-                "16 GB free storage recommended", formatBytes(free) + " free");
+        Level level = free >= RECOMMENDED_FREE_BYTES ? Level.OK : free >= RUNTIME_BYTES ? Level.WARN : Level.FAIL;
+        return new Item(level, "Free storage",
+                formatBytes(free) + " free. DroidDeck needs about 4.1 GB, plus room for Steam and games.");
     }
 
     /** Creates a throwaway 1x1 GLES context to read GL_RENDERER (e.g. "Adreno (TM) 740"). */

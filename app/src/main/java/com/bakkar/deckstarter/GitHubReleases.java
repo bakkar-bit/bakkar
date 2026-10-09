@@ -10,6 +10,8 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -25,7 +27,31 @@ final class GitHubReleases {
         String notes;
         String pageUrl;
         boolean prerelease;
-        Asset apk;
+        final List<Asset> apks = new ArrayList<>();
+
+        /**
+         * Picks the APK to install. For the official repository that is the chosen variant (the
+         * shortest matching name, as DroidDeck's own release tooling does); for any other
+         * repository, the best-scoring APK. Returns null if none fits.
+         */
+        Asset pick(DroidDeckSource.Variant variant, boolean official) {
+            Asset best = null;
+            for (Asset a : apks) {
+                if (official) {
+                    if (!variant.matches(a.name)) continue;
+                    if (best == null || a.name.length() < best.name.length()) best = a;
+                } else {
+                    int score = scoreApk(a.name);
+                    if (score == Integer.MIN_VALUE) continue;
+                    int bestScore = best == null ? Integer.MIN_VALUE : scoreApk(best.name);
+                    if (best == null || score > bestScore
+                            || (score == bestScore && a.name.length() < best.name.length())) {
+                        best = a;
+                    }
+                }
+            }
+            return best;
+        }
     }
 
     static final class Asset {
@@ -78,25 +104,22 @@ final class GitHubReleases {
         r.prerelease = json.optBoolean("prerelease");
 
         JSONArray assets = json.optJSONArray("assets");
-        int bestScore = Integer.MIN_VALUE;
         for (int i = 0; assets != null && i < assets.length(); i++) {
             JSONObject a = assets.getJSONObject(i);
             String name = a.optString("name");
-            int score = scoreApk(name);
-            if (score == Integer.MIN_VALUE || score <= bestScore) continue;
-            bestScore = score;
+            if (!name.toLowerCase(Locale.ROOT).endsWith(".apk")) continue;
             Asset asset = new Asset();
             asset.name = name;
             asset.size = a.optLong("size");
             asset.downloadUrl = a.optString("browser_download_url");
             String digest = a.isNull("digest") ? "" : a.optString("digest");
             asset.sha256 = digest.startsWith("sha256:") ? digest.substring(7).toLowerCase(Locale.ROOT) : null;
-            r.apk = asset;
+            r.apks.add(asset);
         }
         return r;
     }
 
-    /** Ranks release assets so an arm64 or universal APK wins; MIN_VALUE means "not usable". */
+    /** Ranks APKs from repositories other than the official one; MIN_VALUE means "not usable". */
     static int scoreApk(String name) {
         String n = name.toLowerCase(Locale.ROOT);
         if (!n.endsWith(".apk")) return Integer.MIN_VALUE;
