@@ -37,7 +37,8 @@ with its own data.
 ## Getting the APK
 
 Every push builds `DeckStarter.apk` with GitHub Actions (**Actions → Build APK → artifact
-`DeckStarter-apk`**). Pushing a tag such as `v0.1.0` also attaches the APK to a GitHub release.
+`DeckStarter-apk`**). To publish a release anyone can download, push a tag such as `v0.1.0`, or
+run **Actions → Build APK → Run workflow** with a `release_tag`.
 
 Install it on the device, open it, and follow steps 1–3 on screen. Android will ask once for
 permission to let DeckStarter install apps.
